@@ -151,8 +151,8 @@ def main(path: Path, n_mfcc: int, name: str) -> None:
     
     # 1. Process raw data
     logger.info(f"Processing raw data from {path}")
-    filepaths = get_data(path, n_mfcc)
-    dataset = process_data(filepaths)
+    filepaths = get_data(path)
+    dataset = process_data(filepaths, n_mfcc)
     
     # 2. Save processed data for future use
     logger.info(f"Saving processed dataset {name}")
