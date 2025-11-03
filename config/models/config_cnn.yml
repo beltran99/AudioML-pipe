@@ -1,6 +1,9 @@
 name: "mymodel_cnn"
 version: 0.1.0
 
+model:
+  type: "CNN"
+
 optimizer:
   type: "Adam"
   params:

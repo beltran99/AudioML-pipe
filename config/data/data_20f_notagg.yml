@@ -1,0 +1,6 @@
+n_mfcc: 20
+resampling_rate: 16000
+n_fft: 512
+hop_length: 160
+padding: 200
+aggregate_over_t: False

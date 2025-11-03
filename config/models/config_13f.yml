@@ -2,6 +2,7 @@ name: "mymodel_13_coeff"
 version: 0.1.0
 
 model:
+  type: "FCNN"
   layers:
     input_size: 13
     hidden_sizes: [512, 512, 512]
