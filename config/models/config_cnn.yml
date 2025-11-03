@@ -5,11 +5,12 @@ model:
   type: "CNN"
 
 optimizer:
-  type: "Adam"
+  type: "SGD"
   params:
-    lr: 1e-6
+    lr: 1e-4
+    momentum: 0.9
 
 eval_split: 0.2
 epochs: 50
-batchsize: 32
+batchsize: 100
 earlystop: True
