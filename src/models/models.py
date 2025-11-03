@@ -5,16 +5,6 @@ import torch.nn as nn
 
 from src.logger import get_logger
 
-DEFAULT_FCNN = {
-    "input_size": 40,
-    "hidden_sizes": [100, 100, 100],
-    "output_size": 10,
-    "activation_fn": {"type": "ReLU"}
-}
-DEFAULT_OPT = {
-    "type": "SGD"
-}
-
 
 class FCNN(nn.Module):
     def __init__(self, input_size: int, hidden_sizes: list, output_size: int, activation_fn: dict) -> None:
@@ -37,7 +27,7 @@ class FCNN(nn.Module):
         self.layers = nn.ModuleList()
         self.bn = nn.ModuleList()
         
-        self.activation_out = nn.Softmax(dim=1)
+        self.activation_out = nn.LogSoftmax(dim=1)
 
         for i, layer_size in enumerate(layer_sizes[:-1]):
             self.layers.append(nn.Linear(layer_size, layer_sizes[i + 1]))
@@ -64,3 +54,41 @@ class FCNN(nn.Module):
                 sys.exit(1)
                 
         return activation_fn
+    
+    
+class CNN(nn.Module):
+    def __init__(self, n_out=10):
+        super(CNN, self).__init__()
+        self.conv1 = nn.Conv2d(1, 32, 3, 1)
+        self.pool1 = nn.MaxPool2d((2, 2))
+        self.conv2 = nn.Conv2d(32, 64, 3, 1)
+        self.pool2 = nn.MaxPool2d((2, 2))
+        self.dropout1 = nn.Dropout(0.25)
+        self.dropout2 = nn.Dropout(0.5)
+        self.fc1 = nn.Linear(2304, 128) # hardcoded for input features of shape (13, 150)
+        self.fc2 = nn.Linear(128, n_out)
+
+    def forward(self, x):
+        # Pass data through conv1
+        x = self.conv1(x)
+        x = torch.nn.ReLU()(x)
+        x = self.pool1(x)
+
+        # Pass data through conv2
+        x = self.conv2(x)
+        x = torch.nn.ReLU()(x)
+        x = self.pool2(x)
+        x = self.dropout1(x)
+        
+        # Flatten x with start_dim=1
+        x = torch.flatten(x, 1)
+        
+        # Pass data through fc1
+        x = self.fc1(x)
+        x = torch.nn.ReLU()(x)
+        x = self.dropout2(x)
+        
+        x = self.fc2(x)
+        output = torch.nn.LogSoftmax(dim=1)(x)
+        
+        return output
