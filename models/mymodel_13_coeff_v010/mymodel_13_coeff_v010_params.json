@@ -1,0 +1,12 @@
+{
+    "input_size": 13,
+    "hidden_sizes": [
+        512,
+        512,
+        512
+    ],
+    "output_size": 10,
+    "activation_fn": {
+        "type": "ReLU"
+    }
+}

@@ -1,0 +1,13 @@
+{
+    "input_size": 20,
+    "hidden_sizes": [
+        1024,
+        1024,
+        1024
+    ],
+    "output_size": 10,
+    "activation_fn": {
+        "type": "ReLU"
+    },
+    "model_type": "FCNN"
+}
