@@ -1,0 +1,20 @@
+name: "mymodel_13_coeff"
+version: 0.1.0
+
+model:
+  layers:
+    input_size: 13
+    hidden_sizes: [512, 512, 512]
+    output_size: 10
+  activation: 
+    type: "ReLU"
+
+optimizer:
+  type: "Adam"
+  params:
+    lr: 1e-6
+
+eval_split: 0.2
+epochs: 50
+batchsize: 32
+earlystop: True

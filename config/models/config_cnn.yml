@@ -1,0 +1,12 @@
+name: "mymodel_cnn"
+version: 0.1.0
+
+optimizer:
+  type: "Adam"
+  params:
+    lr: 1e-6
+
+eval_split: 0.2
+epochs: 50
+batchsize: 32
+earlystop: True
