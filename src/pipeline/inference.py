@@ -9,9 +9,10 @@ import numpy as np
 import torch
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 
-from src.data.make_dataset import load_data
+from src.data.make_dataset import get_data, process_data
 from src.logger import get_logger
-from src.models.models import FCNN
+from src.utils import read_config, parse_data_config
+from src.models.models import FCNN, CNN
 
 logging_level = logging.DEBUG
 ROOT_DIR = Path(__file__).parent / '../..' # project root
@@ -19,6 +20,7 @@ ROOT_DIR = Path(__file__).parent / '../..' # project root
 def main(
     saved_model_path: Path,
     test_data_path: Path,
+    data_config_path: Path,
     make_report: bool) -> None:
     """Create and execute an inference pipeline.
         1. Load trained model.
@@ -31,6 +33,7 @@ def main(
     Args:
         saved_model_path (Path): Path to trained model.
         test_data_path (Path): Path to test data.
+        data_config_path (Path): ...
         make_report (bool): Option to make a report with the testing results.
     """
     
@@ -55,6 +58,7 @@ def main(
     saved_model_path = saved_model_path / (model_name + ".pth")
     try:
         saved_model = FCNN(**input_params)
+        # saved_model = CNN()
         saved_model.load_state_dict(torch.load(saved_model_path, weights_only=True))
     except FileNotFoundError as err:
         logger.error(f"File not found in the specified path {saved_model_path}\n\tError details: {err=}, {type(err)=}")
@@ -65,9 +69,15 @@ def main(
         
     # 2. Load and process test data
     n_mfcc = saved_model.input_size
-    processed_data = load_data(test_data_path, n_mfcc, show_progress=False)
+    # n_mfcc = 13
+    filepaths = get_data(test_data_path)
+    data_config = read_config(data_config_path) if data_config_path is not None else {}
+    params = parse_data_config(data_config)
+    processed_data = process_data(filepaths, params, show_progress=False)
+    
     x_test, y_test = zip(*processed_data)
     x_test = torch.tensor(np.array(x_test), dtype=torch.float32)
+    # x_test = x_test.unsqueeze(1).float()  # (batch, 1, 13, 150)
     y_test = np.array(y_test, dtype=np.int32)
     
     # 3. Perform inference
@@ -95,7 +105,7 @@ def main(
             cm = confusion_matrix(y_test, y_pred, labels=range(10))
             # Plot Confusion Matrix
             disp = ConfusionMatrixDisplay(cm).plot()
-            plt.title("Model Confusion Matrix at test time")
+            plt.title("Model Confusion Matrix at inference time")
             plt.savefig(cm_report_path)
             logger.info(f"Test report saved succesfully to {cm_report_path}")
         except Exception as err:
@@ -107,15 +117,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Build an inference pipeline.')
     parser.add_argument('--model', required=True, type=str, help='Path to trained model. Please specify path from project root. Usage example: models/mymodel/')
     parser.add_argument('--data-path', required=True, type=str, help='Path to test data. Please specify path from project root. Usage example: data/test/')
+    parser.add_argument('--data-config', type=str, help='Path to config file. Please specify path from project root. Usage example: config/data.yml')
     parser.add_argument('--report', '-r', action="store_true", help='Generate report with test results.')
     parser.add_argument('--verbose', '-v', action="store_true", help='Log informational messages.')
     args = parser.parse_args()
     
     model_path = ROOT_DIR / args.model
     data_path = ROOT_DIR / args.data_path
+    data_config = ROOT_DIR / args.data_config if args.data_config is not None else None
     make_report = args.report
     
     if not args.verbose:
         logging_level = logging.CRITICAL
         
-    main(model_path, data_path, make_report)
+    main(model_path, data_path, data_config, make_report)

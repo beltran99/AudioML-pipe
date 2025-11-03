@@ -16,9 +16,8 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from src.data import make_dataset
 from src.logger import get_logger
-from src.models.models import DEFAULT_FCNN, FCNN
-from src.pipeline.utils import (parse_model_config, parse_optimizer_config,
-                                read_config)
+from src.models.models import FCNN, CNN
+from src.utils import (parse_model_config, parse_optimizer_config, parse_training_loop_config, read_config)
 
 logging_level = logging.DEBUG
 ROOT_DIR = Path(__file__).parent / '../..' # project root    
@@ -48,9 +47,9 @@ def train(
     
     # Important data check
     # Check that the input data has the same shape as the input layer of the model
-    if x.shape[1] != model.input_size:
-        logger.warning(f"Invalid configuration: input data shape must match model's input layer size\n\tInput data shape: {x.shape}, Model input layer size: {model.input_size}")
-        sys.exit(1)
+    # if x.shape[1] != model.input_size:
+    #     logger.warning(f"Invalid configuration: input data shape must match model's input layer size\n\tInput data shape: {x.shape}, Model input layer size: {model.input_size}")
+    #     sys.exit(1)
     
     X_train, X_val, y_train, y_val = train_test_split(x, y, test_size=train_config['eval_split'], random_state=42)
     
@@ -64,12 +63,13 @@ def train(
     train_data = TensorDataset(X_train, y_train)
     val_data = TensorDataset(X_val, y_val)
 
-    batch_size = train_config['batch_size']
+    batch_size = train_config['batchsize']
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True) # reshuffle data at every epoch
     val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False)
     
     optimizer = parse_optimizer_config(model.parameters(), opt_config)
-    loss_fn = nn.CrossEntropyLoss() # could also be parametrized
+    # loss_fn = nn.CrossEntropyLoss() # could also be parametrized
+    loss_fn = nn.NLLLoss() # could also be parametrized
     
     # Training history dict
     history = {
@@ -80,6 +80,7 @@ def train(
     }
     
     # Training loop
+    early_stop = train_config['earlystop']
     epochs = train_config['epochs']
     for epoch in range(epochs):
         ### Training step ###
@@ -90,6 +91,8 @@ def train(
 
         for batch in train_loader:
             X_batch, y_batch = batch
+            
+            # X_batch = X_batch.unsqueeze(1).float()  # (batch, 1, 13, 150)
 
             # Forward pass
             predictions = model(X_batch)
@@ -122,6 +125,7 @@ def train(
         with torch.no_grad(): # disable gradient computation for evaluation
             for batch in val_loader:
                 X_batch, y_batch = batch
+                # X_batch = X_batch.unsqueeze(1).float()  # (batch, 1, 13, 150)
                 predictions = model(X_batch)
                 val_loss += loss_fn(predictions, y_batch).item()
 
@@ -145,12 +149,15 @@ def train(
             f"Val Loss: {avg_val_loss:.4f}, Val Acc: {val_acc:.4f}"
         )
         
+        if early_stop and len(history['val_loss']) > 1 and avg_val_loss > history['val_loss'][epoch]:
+            logger.info(f"Early stopping: Val. loss has increased from {history['val_loss'][epoch]:.4f} to {avg_val_loss:.4f}!")
+            break
+        
     return model, history
 
 def main(
         data_path: Path,
         config_path: Union[Path, None],
-        train_loop_dict: dict,
         is_persistent: bool,
         make_report: bool) -> None:
     """Create and execute a training pipeline.
@@ -165,9 +172,8 @@ def main(
     Args:
         data_path (Path): Processed dataset path.
         config_path (Union[Path, None]): Optional. Path to config file containing
-        configuration of model and optimizer. If not provided, the default
+        configuration of model, optimizer, and training loop. If not provided, the default
         configuration will be considered.
-        train_loop_dict (dict): Dictionary with training options specified as command line arguments.
         is_persistent (bool): Option to save the trained model.
         make_report (bool): Option to make a report with the training results.
     """
@@ -192,15 +198,17 @@ def main(
     logger.info(f"Building model")
     config = read_config(config_path)
     model_params = parse_model_config(config)
+    train_loop_config = parse_training_loop_config(config)
     
     device = torch.device("cpu")
     model = FCNN(**model_params).to(device)
+    # model = CNN().to(device)
     logger.info(f"Model built succesfully!\n{model}")
     
     # 3. Train model
     logger.info(f"Loading training configuration")
     opt_config = config.get("optimizer", {})
-    trained_model, history = train(model, x, y, opt_config, train_loop_dict)
+    trained_model, history = train(model, x, y, opt_config, train_loop_config)
     
     # 4. Save trained model
     model_name = config.get("name", "mymodel")
@@ -268,35 +276,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Build a training pipeline.')
     parser.add_argument('--data-path', required=True, type=str, help='Path to processed data. Please specify path from project root. Usage example: data/processed/mydataset.npz')
     parser.add_argument('--config-path', type=str, help='Path to experiment config file, with model and optimizer parameters. Please specify path from project root. Usage example: experiments/config.yml')
-    parser.add_argument('--eval-split', type=float, default=0.2, help='Proportion of data used for evaluation.')
-    parser.add_argument('--epochs', type=int, default=10, help='Number of training epochs.')
-    parser.add_argument('--batch-size', type=int, default=32, help='Number of samples per batch.')
     parser.add_argument('--report', '-r', action="store_true", help='Generate report with train results.')
     parser.add_argument('--persistent', '-p', action="store_true", help='Save trained model for later use.')
     parser.add_argument('--verbose', '-v', action="store_true", help='Log informational messages.')
     args = parser.parse_args()
     
-    if args.eval_split <= 0. or args.eval_split >= 1.0:
-        parser.error("The value of --eval-split must be greater than 0.0 and smaller than 1.0")
-    if args.epochs == 0:
-        parser.error("The value of --epochs must be greater than 0")
-    if args.batch_size == 0:
-        parser.error("The value of --batch-size must be greater than 0")
     if not args.data_path.endswith(".npz"):
         parser.error("Expected dataset in --data-path in .npz format")
-    
+        
     data_path = ROOT_DIR / args.data_path
     config_path = ROOT_DIR / args.config_path if args.config_path is not None else None
-    train_loop_dict = dict(
-        eval_split=args.eval_split,
-        epochs=args.epochs,
-        batch_size=args.batch_size
-    )
     make_report = args.report
     is_persistent = args.persistent
     
     if not args.verbose:
         logging_level = logging.ERROR
         
-    main(data_path, config_path, train_loop_dict, is_persistent, make_report)
+    main(data_path, config_path, is_persistent, make_report)
     
