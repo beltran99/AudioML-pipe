@@ -57,16 +57,28 @@ class FCNN(nn.Module):
     
     
 class CNN(nn.Module):
-    def __init__(self, n_out=10):
+    def __init__(self, n_in, n_out=10):
         super(CNN, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, 3, 1)
-        self.pool1 = nn.MaxPool2d((2, 2))
-        self.conv2 = nn.Conv2d(32, 64, 3, 1)
-        self.pool2 = nn.MaxPool2d((2, 2))
-        self.dropout1 = nn.Dropout(0.25)
+        self.conv1 = nn.Conv2d(1, 100, kernel_size=(3, 1), stride=1, padding=(1, 0))
+        self.pool1 = nn.MaxPool2d((3, 1), stride=2)
+        self.conv2 = nn.Conv2d(100, 32, kernel_size=(3, 1), stride=1, padding=(1, 0))
+        self.pool2 = nn.MaxPool2d((2, 1), stride=2)
+        self.conv3 = nn.Conv2d(32, 64, kernel_size=(3, 1), stride=1, padding=(1, 0))
+        self.pool3 = nn.MaxPool2d((2, 1), stride=2)
+        self.dropout1 = nn.Dropout(0.3)
         self.dropout2 = nn.Dropout(0.5)
-        self.fc1 = nn.Linear(2304, 128) # hardcoded for input features of shape (13, 150)
-        self.fc2 = nn.Linear(128, n_out)
+        
+        if n_in == 13:
+            self.fc1 = nn.Linear(1600, 1024) # hardcoded for input features of shape (13, 150)
+        elif n_in == 20:
+            self.fc1 = nn.Linear(3200, 1024) # hardcoded for input features of shape (20, 200)
+        else:
+            logger = get_logger(__name__)
+            logger.error(f"The CNN module currently supports input features with shapes of (13, 200) or (20, 200).")
+            sys.exit(1)
+            
+        self.fc2 = nn.Linear(1024, 512)            
+        self.fc3 = nn.Linear(512, n_out)
 
     def forward(self, x):
         # Pass data through conv1
@@ -78,7 +90,11 @@ class CNN(nn.Module):
         x = self.conv2(x)
         x = torch.nn.ReLU()(x)
         x = self.pool2(x)
-        x = self.dropout1(x)
+        
+        # Pass data through conv3
+        x = self.conv3(x)
+        x = torch.nn.ReLU()(x)
+        x = self.pool3(x)
         
         # Flatten x with start_dim=1
         x = torch.flatten(x, 1)
@@ -86,9 +102,13 @@ class CNN(nn.Module):
         # Pass data through fc1
         x = self.fc1(x)
         x = torch.nn.ReLU()(x)
+        
+        # Pass data through fc2
+        x = self.fc2(x)
+        x = torch.nn.ReLU()(x)
         x = self.dropout2(x)
         
-        x = self.fc2(x)
+        x = self.fc3(x)
         output = torch.nn.LogSoftmax(dim=1)(x)
         
         return output

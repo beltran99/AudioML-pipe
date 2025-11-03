@@ -20,11 +20,7 @@ def process_raw_data(raw_data: np.array, sample_rate: int, params: dict) -> None
     Args:
         raw_data (np.array): Time series audio.
         sample_rate (int): Sampling rate of audio.
-        params (dict): ...
-            n_mfcc (int): Number of coefficients to extract from raw data.
-            n_ftt (int): ...
-            hop_length (int): ...
-            aggregate (bool): ...
+        params (dict): Parameters for audio processing.
     """
     
     max_len = params.pop("padding")
@@ -77,16 +73,13 @@ def get_data(data_path: Path) -> list:
         
     return filepaths
 
-# def process_data(filepaths: list, n_mfcc: int, resampling_rate: int, show_progress: bool = True) -> list:
 def process_data(filepaths: list, params: dict, show_progress: bool = True) -> list:
     """Dataset generator.
     Process raw audio files by extracting MFCCs and labels, and make pairs of (features, label).
 
     Args:
         filepaths (list): List of paths to all raw audio files in the dataset.
-        params (dict): ...
-            n_mfcc (int): Number of MFCCs to extract from audio files.
-            resampling_rate (int): Resampling rate for input audio.
+        params (dict): Parameters for data processing.
         show_progress (bool, optional): Option for logging the progress of the data processing. Defaults to True.
 
     Returns:
@@ -107,8 +100,6 @@ def process_data(filepaths: list, params: dict, show_progress: bool = True) -> l
         speaker, filename = filepath.parent.name, filepath.stem
         # label is expected to be at the beggining of filename, followed by underscore
         label = int(filename.split("_")[0])
-        # reading files one by one seems inefficient,
-        # there might be an efficient way of batching them
         raw_data, sample_rate = read_file(filepath, resampling_rate)
         extracted_features = process_raw_data(raw_data, sample_rate, params.copy())
         
@@ -172,16 +163,18 @@ def save_dataset(dataset: list, name: str) -> None:
         logger.error(f"Unexpected error when trying to save processed data\n\tError details: {err=}, {type(err)=}")
         sys.exit(1)
 
-# def main(path: Path, n_mfcc: int, resampling_rate: int, name: str) -> None:
-# def main(path: Path, params: dict, name: str) -> None:
 def main(path: Path, config: Union[Path, None], name: str) -> None:
     """Generate a dataset suitable for supervised learning. Extract MFCCs from audio files, and save processed dataset to disk. 
 
     Args:
         path (Path): Raw dataset path.
-        params (dict): Dict of parameters for the feature extraction.
+        config (Path): Path to config file with parameters for the data processing. Supported parameters:
             n_mfcc (int): Number of Mel-frequency cepstral coefficients (MFCCs) to extract from raw audio files.
             resampling_rate (int): Resampling rate for input audio.
+            n_fft (int): Length of the FFT window.
+            hop_length (int): Number of audio samples between STFT columns.
+            padding (int): Maximum length for padding/truncation of samples when not aggregated over time. 
+            aggregate_over_t (bool): Option to aggregate coefficients over time.
         name (str): Dataset name.
     """
     
@@ -201,14 +194,14 @@ def main(path: Path, config: Union[Path, None], name: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process raw input data.')
-    parser.add_argument('--path', '-p', type=str, required=True, help='Path to raw data. Please specify path from project root. Usage example: data/raw/')
-    parser.add_argument('--config', type=str, help='Path to config file. Please specify path from project root. Usage example: config/data.yml')
+    parser.add_argument('--data-path', '-p', type=str, required=True, help='Path to raw data. Please specify path from project root. Usage example: data/raw/')
+    parser.add_argument('--config-path', type=str, help='Path to config file. Please specify path from project root. Usage example: config/data/data_config.yml')
     parser.add_argument('--name', type=str, default="mydataset", help='Dataset name.')
     parser.add_argument('--verbose', '-v', action="store_true", help='Log informational messages.')
     args = parser.parse_args()
     
-    path = ROOT_DIR / args.path
-    config = ROOT_DIR / args.config if args.config is not None else None
+    path = ROOT_DIR / args.data_path
+    config = ROOT_DIR / args.config_path if args.config_path is not None else None
     name = args.name
     
     if not args.verbose:

@@ -23,8 +23,8 @@ def main(
     data_config_path: Path,
     make_report: bool) -> None:
     """Create and execute an inference pipeline.
-        1. Load trained model.
-        2. Read and process test data.
+        1. Read and process test data.
+        2. Load trained model.
         3. Perform inference.
         
         Optional:
@@ -33,13 +33,23 @@ def main(
     Args:
         saved_model_path (Path): Path to trained model.
         test_data_path (Path): Path to test data.
-        data_config_path (Path): ...
+        data_config_path (Path): Path to config file with parameters for the data processing.
         make_report (bool): Option to make a report with the testing results.
     """
     
     logger = get_logger(__name__, logging_level)
+        
+    # 1. Load and process test data
+    filepaths = get_data(test_data_path)
+    data_config = read_config(data_config_path) if data_config_path is not None else {}
+    params = parse_data_config(data_config)
+    processed_data = process_data(filepaths, params, show_progress=False)
     
-    # 1. Load saved model
+    x_test, y_test = zip(*processed_data)
+    x_test = torch.tensor(np.array(x_test), dtype=torch.float32)
+    y_test = np.array(y_test, dtype=np.int32)
+    
+    # 2. Load saved model
     # Load model params
     model_name = saved_model_path.stem
     params_path = saved_model_path / (model_name + "_params.json")
@@ -56,9 +66,14 @@ def main(
     # Load model state
     # Create instance of model with saved params and load saved state
     saved_model_path = saved_model_path / (model_name + ".pth")
+    model_type = input_params.pop("model_type")
+    device = torch.device("cpu")
     try:
-        saved_model = FCNN(**input_params)
-        # saved_model = CNN()
+        if model_type == "FCNN":
+            saved_model = FCNN(**input_params)
+        else:
+            n_in = x_test.shape[1]
+            saved_model = CNN(n_in).to(device)
         saved_model.load_state_dict(torch.load(saved_model_path, weights_only=True))
     except FileNotFoundError as err:
         logger.error(f"File not found in the specified path {saved_model_path}\n\tError details: {err=}, {type(err)=}")
@@ -66,24 +81,13 @@ def main(
     except Exception as err:
         logger.error(f"Unexpected error when trying to load saved model state\n\tError details: {err=}, {type(err)=}")
         sys.exit(1)
-        
-    # 2. Load and process test data
-    n_mfcc = saved_model.input_size
-    # n_mfcc = 13
-    filepaths = get_data(test_data_path)
-    data_config = read_config(data_config_path) if data_config_path is not None else {}
-    params = parse_data_config(data_config)
-    processed_data = process_data(filepaths, params, show_progress=False)
-    
-    x_test, y_test = zip(*processed_data)
-    x_test = torch.tensor(np.array(x_test), dtype=torch.float32)
-    # x_test = x_test.unsqueeze(1).float()  # (batch, 1, 13, 150)
-    y_test = np.array(y_test, dtype=np.int32)
     
     # 3. Perform inference
     # Set to inference mode
     saved_model.eval()
     with torch.no_grad():
+        if model_type == "CNN":
+            x_test = x_test.unsqueeze(1).float()  # (batch, 1, 13, 150)
         predictions = saved_model(x_test)
     
     # Calculate test accuracy
@@ -117,7 +121,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Build an inference pipeline.')
     parser.add_argument('--model', required=True, type=str, help='Path to trained model. Please specify path from project root. Usage example: models/mymodel/')
     parser.add_argument('--data-path', required=True, type=str, help='Path to test data. Please specify path from project root. Usage example: data/test/')
-    parser.add_argument('--data-config', type=str, help='Path to config file. Please specify path from project root. Usage example: config/data.yml')
+    parser.add_argument('--data-config', type=str, help='Path to config file. Please specify path from project root. Usage example: config/data/data.yml')
     parser.add_argument('--report', '-r', action="store_true", help='Generate report with test results.')
     parser.add_argument('--verbose', '-v', action="store_true", help='Log informational messages.')
     args = parser.parse_args()

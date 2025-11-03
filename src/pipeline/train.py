@@ -25,6 +25,7 @@ ROOT_DIR = Path(__file__).parent / '../..' # project root
 
 def train(
         model: nn.Module,
+        model_type: str,
         x: np.array,
         y: np.array,
         opt_config: dict,
@@ -34,6 +35,7 @@ def train(
 
     Args:
         model (nn.Module): Model to be trained.
+        model_type (str): Type of model. Can be 'FCNN' or 'CNN'.
         x (np.array): Feature variables from dataset.
         y (np.array): Target variable from dataset.
         opt_config (dict): Optimizer configuration.
@@ -45,11 +47,11 @@ def train(
     
     logger = get_logger(__name__, logging_level)
     
-    # Important data check
+    # Data check
     # Check that the input data has the same shape as the input layer of the model
-    # if x.shape[1] != model.input_size:
-    #     logger.warning(f"Invalid configuration: input data shape must match model's input layer size\n\tInput data shape: {x.shape}, Model input layer size: {model.input_size}")
-    #     sys.exit(1)
+    if model_type == "FCNN" and x.shape[1] != model.input_size:
+        logger.warning(f"Invalid configuration: input data shape must match model's input layer size\n\tInput data shape: {x.shape}, Model input layer size: {model.input_size}")
+        sys.exit(1)
     
     X_train, X_val, y_train, y_val = train_test_split(x, y, test_size=train_config['eval_split'], random_state=42)
     
@@ -68,7 +70,6 @@ def train(
     val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False)
     
     optimizer = parse_optimizer_config(model.parameters(), opt_config)
-    # loss_fn = nn.CrossEntropyLoss() # could also be parametrized
     loss_fn = nn.NLLLoss() # could also be parametrized
     
     # Training history dict
@@ -91,8 +92,8 @@ def train(
 
         for batch in train_loader:
             X_batch, y_batch = batch
-            
-            # X_batch = X_batch.unsqueeze(1).float()  # (batch, 1, 13, 150)
+            if model_type == "CNN":
+                X_batch = X_batch.unsqueeze(1).float() # (batch, 1, n_mfcc, t)
 
             # Forward pass
             predictions = model(X_batch)
@@ -125,7 +126,9 @@ def train(
         with torch.no_grad(): # disable gradient computation for evaluation
             for batch in val_loader:
                 X_batch, y_batch = batch
-                # X_batch = X_batch.unsqueeze(1).float()  # (batch, 1, 13, 150)
+                if model_type == "CNN":
+                    X_batch = X_batch.unsqueeze(1).float() # (batch, 1, n_mfcc, t)
+                    
                 predictions = model(X_batch)
                 val_loss += loss_fn(predictions, y_batch).item()
 
@@ -198,17 +201,24 @@ def main(
     logger.info(f"Building model")
     config = read_config(config_path)
     model_params = parse_model_config(config)
+    model_type = model_params.pop("model_type")
     train_loop_config = parse_training_loop_config(config)
     
     device = torch.device("cpu")
-    model = FCNN(**model_params).to(device)
-    # model = CNN().to(device)
+    if model_type == "FCNN":
+        model = FCNN(**model_params).to(device)
+    elif model_type == "CNN":
+        n_in = x.shape[1]
+        model = CNN(n_in).to(device)
+    else:
+        logger.error(f"Model type \'{model_type}\' specified in config file not valid.")
+        sys.exit(1)
     logger.info(f"Model built succesfully!\n{model}")
     
     # 3. Train model
     logger.info(f"Loading training configuration")
     opt_config = config.get("optimizer", {})
-    trained_model, history = train(model, x, y, opt_config, train_loop_config)
+    trained_model, history = train(model, model_type, x, y, opt_config, train_loop_config)
     
     # 4. Save trained model
     model_name = config.get("name", "mymodel")
@@ -227,6 +237,7 @@ def main(
             torch.save(trained_model.state_dict(), model_path)
             logger.info(f"Model state saved succesfully to {model_path}")
             
+            model_params["model_type"] = model_type # add model type again to reload in inference
             f = open(model_params_path, 'w', encoding='utf-8')
             json.dump(model_params, f, ensure_ascii=False, indent=4)
             logger.info(f"Model parameters saved succesfully to {model_params_path}")
@@ -275,7 +286,7 @@ def main(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Build a training pipeline.')
     parser.add_argument('--data-path', required=True, type=str, help='Path to processed data. Please specify path from project root. Usage example: data/processed/mydataset.npz')
-    parser.add_argument('--config-path', type=str, help='Path to experiment config file, with model and optimizer parameters. Please specify path from project root. Usage example: experiments/config.yml')
+    parser.add_argument('--config-path', type=str, help='Path to experiment config file, with model and optimizer parameters. Please specify path from project root. Usage example: config/models/myconfig.yml')
     parser.add_argument('--report', '-r', action="store_true", help='Generate report with train results.')
     parser.add_argument('--persistent', '-p', action="store_true", help='Save trained model for later use.')
     parser.add_argument('--verbose', '-v', action="store_true", help='Log informational messages.')
